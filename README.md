@@ -15,6 +15,8 @@ NOTE
 * Trained using Nvidia GTX 1080Ti 11GB
 * Trained on Windows 10
 
+## Docker Deployment
+* For local docker deployment for testing use https://github.com/hpanwar08/document-layout-analysis-app
 
 ## Benchmarking  
 
