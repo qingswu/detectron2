@@ -15,8 +15,22 @@ NOTE
 * Trained using Nvidia GTX 1080Ti 11GB
 * Trained on Windows 10
 
+## Steps to test pretrained models locally or jump to next section for docker deployment
+* Install the latest `Detectron2` from https://github.com/facebookresearch/detectron2
+* Copy config files (`DLA_*`) from this repo to the installed Detectron2
+* Download the relevant model from the `Benchmarking` section
+* Add the below code in demo/demo.py in the `main`to get confidence along with label names
+```
+from detectron2.data import MetadataCatalog
+MetadataCatalog.get("dla_val").thing_classes = ['text', 'title', 'list', 'table', 'figure']
+```
+* Then run below command for prediction on single image (change the config file relevant to the model)
+```
+python demo/demo.py --config-file configs/DLA_mask_rcnn_X_101_32x8d_FPN_3x.yaml --input "<path to image.jpg>" --output <path to save the predicted image> --confidence-threshold 0.5 --opts MODEL.WEIGHTS <path to model_final_trimmed.pth> MODEL.DEVICE cpu
+```
+
 ## Docker Deployment
-* For local docker deployment for testing use https://github.com/hpanwar08/document-layout-analysis-app
+* For local docker deployment for testing use [Docker DLA](https://github.com/hpanwar08/document-layout-analysis-app)
 
 ## Benchmarking  
 
