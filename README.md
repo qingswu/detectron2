@@ -18,7 +18,7 @@ NOTE
 ## Steps to test pretrained models locally or jump to next section for docker deployment
 * Install the latest `Detectron2` from https://github.com/facebookresearch/detectron2
 * Copy config files (`DLA_*`) from this repo to the installed Detectron2
-* Download the relevant model from the `Benchmarking` section
+* Download the relevant model from the `Benchmarking` section. If you have downloaded model using `wget` then refer https://github.com/hpanwar08/detectron2/issues/22
 * Add the below code in demo/demo.py in the `main`to get confidence along with label names
 ```
 from detectron2.data import MetadataCatalog
