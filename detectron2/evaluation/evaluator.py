@@ -1,12 +1,13 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 import datetime
 import logging
 import time
 from collections import OrderedDict
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import torch
+from torch import nn
 
-from detectron2.utils.comm import is_main_process
+from detectron2.utils.comm import get_world_size, is_main_process
 from detectron2.utils.logger import log_every_n_seconds
 
 
@@ -28,13 +29,20 @@ class DatasetEvaluator:
         """
         pass
 
-    def process(self, input, output):
+    def process(self, inputs, outputs):
         """
-        Process an input/output pair.
+        Process the pair of inputs and outputs.
+        If they contain batches, the pairs can be consumed one-by-one using `zip`:
+
+        .. code-block:: python
+
+            for input_, output in zip(inputs, outputs):
+                # do evaluation on single input/output pair
+                ...
 
         Args:
-            input: the input that's used to call the model.
-            output: the return value of `model(input)`
+            inputs (list): the inputs that's used to call the model.
+            outputs (list): the return value of `model(inputs)`
         """
         pass
 
@@ -55,8 +63,18 @@ class DatasetEvaluator:
 
 
 class DatasetEvaluators(DatasetEvaluator):
+    """
+    Wrapper class to combine multiple :class:`DatasetEvaluator` instances.
+
+    This class dispatches every evaluation call to
+    all of its :class:`DatasetEvaluator`.
+    """
+
     def __init__(self, evaluators):
-        assert len(evaluators)
+        """
+        Args:
+            evaluators (list): the evaluators to combine.
+        """
         super().__init__()
         self._evaluators = evaluators
 
@@ -64,9 +82,9 @@ class DatasetEvaluators(DatasetEvaluator):
         for evaluator in self._evaluators:
             evaluator.reset()
 
-    def process(self, input, output):
+    def process(self, inputs, outputs):
         for evaluator in self._evaluators:
-            evaluator.process(input, output)
+            evaluator.process(inputs, outputs)
 
     def evaluate(self):
         results = OrderedDict()
@@ -84,34 +102,42 @@ class DatasetEvaluators(DatasetEvaluator):
 def inference_on_dataset(model, data_loader, evaluator):
     """
     Run model on the data_loader and evaluate the metrics with evaluator.
+    Also benchmark the inference speed of `model.__call__` accurately.
     The model will be used in eval mode.
 
     Args:
-        model (nn.Module): a module which accepts an object from
-            `data_loader` and returns some outputs. It will be temporarily set to `eval` mode.
+        model (callable): a callable which takes an object from
+            `data_loader` and returns some outputs.
 
+            If it's an nn.Module, it will be temporarily set to `eval` mode.
             If you wish to evaluate a model in `training` mode instead, you can
             wrap the given model and override its behavior of `.eval()` and `.train()`.
         data_loader: an iterable object with a length.
             The elements it generates will be the inputs to the model.
-        evaluator (DatasetEvaluator): the evaluator to run. Use
-            :class:`DatasetEvaluators([])` if you only want to benchmark, but
-            don't want to do any evaluation.
+        evaluator (DatasetEvaluator): the evaluator to run. Use `None` if you only want
+            to benchmark, but don't want to do any evaluation.
 
     Returns:
         The return value of `evaluator.evaluate()`
     """
-    num_devices = torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1
+    num_devices = get_world_size()
     logger = logging.getLogger(__name__)
     logger.info("Start inference on {} images".format(len(data_loader)))
 
     total = len(data_loader)  # inference data loader must have a fixed length
+    if evaluator is None:
+        # create a no-op evaluator
+        evaluator = DatasetEvaluators([])
     evaluator.reset()
 
     num_warmup = min(5, total - 1)
     start_time = time.perf_counter()
     total_compute_time = 0
-    with inference_context(model), torch.no_grad():
+    with ExitStack() as stack:
+        if isinstance(model, nn.Module):
+            stack.enter_context(inference_context(model))
+        stack.enter_context(torch.no_grad())
+
         for idx, inputs in enumerate(data_loader):
             if idx == num_warmup:
                 start_time = time.perf_counter()
@@ -124,9 +150,11 @@ def inference_on_dataset(model, data_loader, evaluator):
             total_compute_time += time.perf_counter() - start_compute_time
             evaluator.process(inputs, outputs)
 
-            if idx >= num_warmup * 2:
-                seconds_per_img = total_compute_time / (idx + 1 - num_warmup)
-                eta = datetime.timedelta(seconds=int(seconds_per_img * (total - idx - 1)))
+            iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)
+            seconds_per_img = total_compute_time / iters_after_start
+            if idx >= num_warmup * 2 or seconds_per_img > 5:
+                total_seconds_per_img = (time.perf_counter() - start_time) / iters_after_start
+                eta = datetime.timedelta(seconds=int(total_seconds_per_img * (total - idx - 1)))
                 log_every_n_seconds(
                     logging.INFO,
                     "Inference done {}/{}. {:.4f} s / img. ETA={}".format(

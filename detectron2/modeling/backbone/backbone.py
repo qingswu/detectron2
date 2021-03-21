@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 from abc import ABCMeta, abstractmethod
 import torch.nn as nn
 
@@ -29,7 +29,7 @@ class Backbone(nn.Module, metaclass=ABCMeta):
         pass
 
     @property
-    def size_divisibility(self):
+    def size_divisibility(self) -> int:
         """
         Some backbones require the input height and width to be divisible by a
         specific integer. This is typically true for encoder / decoder type networks
@@ -51,20 +51,3 @@ class Backbone(nn.Module, metaclass=ABCMeta):
             )
             for name in self._out_features
         }
-
-    # the properties below are not used any more
-
-    @property
-    def out_features(self):
-        """deprecated"""
-        return self._out_features
-
-    @property
-    def out_feature_strides(self):
-        """deprecated"""
-        return {f: self._out_feature_strides[f] for f in self._out_features}
-
-    @property
-    def out_feature_channels(self):
-        """deprecated"""
-        return {f: self._out_feature_channels[f] for f in self._out_features}

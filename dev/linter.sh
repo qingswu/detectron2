@@ -1,14 +1,20 @@
 #!/bin/bash -e
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 
 # Run this script at project root by "./dev/linter.sh" before you commit
 
 {
-	black --version | grep "19.3b0" > /dev/null
+  black --version | grep -E "20.8b1" > /dev/null
 } || {
-	echo "Linter requires black==19.3b0 !"
-	exit 1
+  echo "Linter requires 'black==20.8b1' !"
+  exit 1
 }
+
+ISORT_VERSION=$(isort --version-number)
+if [[ "$ISORT_VERSION" != 4.3* ]]; then
+  echo "Linter requires isort==4.3.21 !"
+  exit 1
+fi
 
 set -v
 
